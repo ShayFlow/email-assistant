@@ -84,6 +84,8 @@ def build_regenerate_user_prompt(
 
 
 def call_claude(system_prompt: str, user_prompt: str) -> dict:
+    if not settings.anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY is not configured on this server.")
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     message = client.messages.create(
