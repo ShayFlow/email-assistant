@@ -5,7 +5,9 @@ FastAPI backend that generates human-sounding email replies using Claude.
 ## Requirements
 
 - Python 3.11+
-- An Anthropic API key
+- One of:
+  - **Claude Max subscription** (default) — the `claude` CLI installed on PATH and logged in (`claude login`). The backend routes calls through `claude-agent-sdk`, billing your subscription instead of an API key.
+  - An Anthropic API key, with `USE_SUBSCRIPTION=false` in `.env`.
 
 ## Setup
 
@@ -19,10 +21,15 @@ FastAPI backend that generates human-sounding email replies using Claude.
    .venv\Scripts\activate
    pip install -r requirements.txt
 
-3. Copy .env.example to .env and fill in your API key:
+3. Configure `.env` (optional):
 
-   ANTHROPIC_API_KEY=sk-ant-...
+   # Default — use the local Claude Max subscription via claude-agent-sdk
+   USE_SUBSCRIPTION=true
    MODEL=claude-sonnet-4-6
+
+   # Or, fall back to an API key
+   USE_SUBSCRIPTION=false
+   ANTHROPIC_API_KEY=sk-ant-...
 
 4. Run the server:
 

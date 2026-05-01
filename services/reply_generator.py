@@ -5,6 +5,17 @@ import anthropic
 
 from config import settings
 
+try:
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        TextBlock,
+        query,
+    )
+    _HAS_AGENT_SDK = True
+except ImportError:
+    _HAS_AGENT_SDK = False
+
 
 SYSTEM_TEMPLATE = """\
 You are an email reply assistant. Your job is to draft email replies that sound \
@@ -83,28 +94,65 @@ def build_regenerate_user_prompt(
     )
 
 
-def call_claude(system_prompt: str, user_prompt: str) -> dict:
+REQUIRED_KEYS = {"intent", "missing_info", "subject", "draft_reply", "style_note"}
+
+
+def _parse_response(raw: str) -> dict:
+    raw = raw.strip()
+    # Some models wrap JSON in ```json fences despite instructions; strip them.
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw
+        if raw.endswith("```"):
+            raw = raw[: -3]
+        raw = raw.strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Claude returned non-JSON output.\n\nRaw response:\n{raw}") from exc
+    missing = REQUIRED_KEYS - data.keys()
+    if missing:
+        raise ValueError(f"Claude response missing keys: {missing}.\n\nRaw response:\n{raw}")
+    return data
+
+
+async def _call_via_subscription(system_prompt: str, user_prompt: str) -> dict:
+    if not _HAS_AGENT_SDK:
+        raise ValueError(
+            "claude-agent-sdk is not installed. Run `pip install claude-agent-sdk` "
+            "or set USE_SUBSCRIPTION=false to fall back to the API key."
+        )
+    options = ClaudeAgentOptions(
+        system_prompt=system_prompt,
+        model=settings.model,
+        max_turns=1,
+    )
+    chunks: list[str] = []
+    async for message in query(prompt=user_prompt, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    chunks.append(block.text)
+    raw = "".join(chunks)
+    if not raw.strip():
+        raise ValueError("Claude (subscription) returned an empty response.")
+    return _parse_response(raw)
+
+
+def _call_via_api_key(system_prompt: str, user_prompt: str) -> dict:
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY is not configured on this server.")
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
     message = client.messages.create(
         model=settings.model,
         max_tokens=1500,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
+    raw = message.content[0].text
+    return _parse_response(raw)
 
-    raw = message.content[0].text.strip()
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Claude returned non-JSON output.\n\nRaw response:\n{raw}") from exc
-
-    required_keys = {"intent", "missing_info", "subject", "draft_reply", "style_note"}
-    missing = required_keys - data.keys()
-    if missing:
-        raise ValueError(f"Claude response missing keys: {missing}.\n\nRaw response:\n{raw}")
-
-    return data
+async def call_claude(system_prompt: str, user_prompt: str) -> dict:
+    if settings.use_subscription:
+        return await _call_via_subscription(system_prompt, user_prompt)
+    return _call_via_api_key(system_prompt, user_prompt)

@@ -74,7 +74,7 @@ async def generate_reply(request: GenerateReplyRequest):
         regeneration_context=request.regeneration_context,
     )
     try:
-        data = call_claude(system_prompt, user_prompt)
+        data = await call_claude(system_prompt, user_prompt)
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return ReplyResponse(**data)
@@ -93,7 +93,7 @@ async def regenerate_reply(request: RegenerateReplyRequest):
         regeneration_feedback=request.regeneration_feedback,
     )
     try:
-        data = call_claude(system_prompt, user_prompt)
+        data = await call_claude(system_prompt, user_prompt)
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return ReplyResponse(**data)
